@@ -6,7 +6,7 @@ env.allowLocalModels = false;
 
 // Force use of tiny model for maximum speed
 const FORCE_TINY_MODEL = true;
-const TINY_MODEL = "Xenova/whisper-tiny";
+const TINY_MODEL = "Xenova/whisper-tiny.en";
 
 // Define model factories
 // Ensures only one model is created of each type
@@ -42,22 +42,30 @@ self.addEventListener("message", async (event) => {
 
     // Do some work...
     // TODO use message data
-    let transcript = await transcribe(
-        message.audio,
-        message.model,
-        message.multilingual,
-        message.quantized,
-        message.subtask,
-        message.language,
-    );
-    if (transcript === null) return;
+    try {
+        let transcript = await transcribe(
+            message.audio,
+            message.model,
+            message.multilingual,
+            message.quantized,
+            message.subtask,
+            message.language,
+        );
+        if (transcript === null) return;
 
-    // Send the result back to the main thread
-    self.postMessage({
-        status: "complete",
-        task: "automatic-speech-recognition",
-        data: transcript,
-    });
+        // Send the result back to the main thread
+        self.postMessage({
+            status: "complete",
+            task: "automatic-speech-recognition",
+            data: transcript,
+        });
+    } catch (error) {
+        self.postMessage({
+            status: "error",
+            task: "automatic-speech-recognition",
+            data: { message: error.message },
+        });
+    }
 });
 
 class AutomaticSpeechRecognitionPipelineFactory extends PipelineFactory {
@@ -97,9 +105,19 @@ const transcribe = async (
     }
 
     // Load transcriber model
-    let transcriber = await p.getInstance((data) => {
-        self.postMessage(data);
-    });
+    let transcriber;
+    try {
+        transcriber = await p.getInstance((data) => {
+            self.postMessage(data);
+        });
+    } catch (error) {
+        self.postMessage({
+            status: "error",
+            task: "automatic-speech-recognition",
+            data: { message: "Model load failed: " + error.message },
+        });
+        return null;
+    }
 
     const time_precision =
         transcriber.processor.feature_extractor.config.chunk_length /

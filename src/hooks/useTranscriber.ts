@@ -49,6 +49,7 @@ export interface Transcriber {
     setSubtask: (subtask: string) => void;
     language?: string;
     setLanguage: (language: string) => void;
+    error?: string;
 }
 
 export function useTranscriber(): Transcriber {
@@ -57,6 +58,7 @@ export function useTranscriber(): Transcriber {
     );
     const [isBusy, setIsBusy] = useState(false);
     const [isModelLoading, setIsModelLoading] = useState(false);
+    const [error, setError] = useState<string | undefined>(undefined);
 
     const [progressItems, setProgressItems] = useState<ProgressItem[]>([]);
 
@@ -109,9 +111,7 @@ export function useTranscriber(): Transcriber {
                 break;
             case "error":
                 setIsBusy(false);
-                alert(
-                    `${message.data.message} This is most likely because you are using Safari on an M1/M2 Mac. Please try again from Chrome, Firefox, or Edge.\n\nIf this is not the case, please file a bug report.`,
-                );
+                setError(message.data.message);
                 break;
             case "done":
                 // Model file loaded: remove the progress item from the list.
@@ -196,6 +196,7 @@ export function useTranscriber(): Transcriber {
             setSubtask,
             language,
             setLanguage,
+            error,
         };
     }, [
         isBusy,
@@ -208,6 +209,7 @@ export function useTranscriber(): Transcriber {
         quantized,
         subtask,
         language,
+        error,
     ]);
 
     return transcriber;

@@ -29,6 +29,7 @@ function App() {
 
             try {
                 // Fetch and decode audio
+                setStatus(`⬇️ Downloading audio...`);
                 const response = await fetch(audioUrl);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -36,31 +37,35 @@ function App() {
                 const arrayBuffer = await blob.arrayBuffer();
 
                 // Decode audio to AudioBuffer
+                setStatus(`🎵 Decoding audio...`);
                 const audioContext = new AudioContext({ sampleRate: 16000 });
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
                 // Start transcription using the latest transcriber ref
+                setStatus(`🧠 Loading model & Transcribing... (This may take a while first time)`);
                 transcriberRef.current.start(audioBuffer);
 
                 // Wait for result with timeout
                 const result = await new Promise<string>((resolve, reject) => {
                     const timeout = setTimeout(() => {
-                        reject(new Error('Transcription timeout (60s)'));
-                    }, 60000);
+                        reject(new Error('Transcription timeout (300s)'));
+                    }, 300000);
 
                     const checkInterval = setInterval(() => {
                         const currentTranscriber = transcriberRef.current;
+
+                        if (currentTranscriber.error) {
+                            clearInterval(checkInterval);
+                            clearTimeout(timeout);
+                            reject(new Error(currentTranscriber.error));
+                            return;
+                        }
+
                         if (currentTranscriber.output && currentTranscriber.output.text && !currentTranscriber.isBusy) {
                             clearInterval(checkInterval);
                             clearTimeout(timeout);
                             resolve(currentTranscriber.output.text);
                         }
-                        // Also check if it failed or stopped without text? 
-                        // The hook doesn't seem to have an explicit error state exposed in output, 
-                        // but isBusy goes false.
-                        // If isBusy is false and we have text, we are done.
-                        // If isBusy is false and NO text, maybe it hasn't started or failed?
-                        // But we just called start().
                     }, 100);
                 });
 
