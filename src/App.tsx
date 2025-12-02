@@ -11,6 +11,12 @@ function App() {
     const [status, setStatus] = useState('⏳ Loading Whisper model...');
     const processingRef = useRef(false);
 
+    const transcriberRef = useRef(transcriber);
+
+    useEffect(() => {
+        transcriberRef.current = transcriber;
+    }, [transcriber]);
+
     useEffect(() => {
         // Expose global API
         (window as any).IOETranscribe = async (audioUrl: string): Promise<string> => {
@@ -33,8 +39,8 @@ function App() {
                 const audioContext = new AudioContext({ sampleRate: 16000 });
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-                // Start transcription (useTranscriber handles Float32Array conversion internally)
-                transcriber.start(audioBuffer);
+                // Start transcription using the latest transcriber ref
+                transcriberRef.current.start(audioBuffer);
 
                 // Wait for result with timeout
                 const result = await new Promise<string>((resolve, reject) => {
@@ -43,16 +49,18 @@ function App() {
                     }, 60000);
 
                     const checkInterval = setInterval(() => {
-                        if (transcriber.output && transcriber.output.text) {
+                        const currentTranscriber = transcriberRef.current;
+                        if (currentTranscriber.output && currentTranscriber.output.text && !currentTranscriber.isBusy) {
                             clearInterval(checkInterval);
                             clearTimeout(timeout);
-                            resolve(transcriber.output.text);
+                            resolve(currentTranscriber.output.text);
                         }
-                        if (transcriber.output === null) {
-                            clearInterval(checkInterval);
-                            clearTimeout(timeout);
-                            reject(new Error('Transcription failed'));
-                        }
+                        // Also check if it failed or stopped without text? 
+                        // The hook doesn't seem to have an explicit error state exposed in output, 
+                        // but isBusy goes false.
+                        // If isBusy is false and we have text, we are done.
+                        // If isBusy is false and NO text, maybe it hasn't started or failed?
+                        // But we just called start().
                     }, 100);
                 });
 
@@ -76,7 +84,7 @@ function App() {
         console.log('%c🚀 IOE Whisper API Ready!', 'color:#0f0;font-weight:bold;font-size:16px');
         console.log('%c💡 Use: window.IOETranscribe(audioUrl)', 'color:#aaa;font-size:12px');
 
-    }, [transcriber]);
+    }, []); // Run once on mount, but use ref for latest state
 
     // Listen for postMessage requests
     useEffect(() => {
