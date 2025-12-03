@@ -9,7 +9,6 @@ const FORCE_TINY_MODEL = true;
 const TINY_MODEL = "Xenova/whisper-tiny.en";
 
 // Define model factories
-// Ensures only one model is created of each type
 class PipelineFactory {
     static task = null;
     static model = null;
@@ -27,12 +26,9 @@ class PipelineFactory {
             this.instance = pipeline(this.task, this.model, {
                 quantized: this.quantized,
                 progress_callback,
-
-                // For medium models, we need to load the `no_attentions` revision to avoid running out of memory
                 revision: this.model.includes("/whisper-medium") ? "no_attentions" : "main"
             });
         }
-
         return this.instance;
     }
 }
@@ -40,8 +36,6 @@ class PipelineFactory {
 self.addEventListener("message", async (event) => {
     const message = event.data;
 
-    // Do some work...
-    // TODO use message data
     try {
         let transcript = await transcribe(
             message.audio,
@@ -53,7 +47,6 @@ self.addEventListener("message", async (event) => {
         );
         if (transcript === null) return;
 
-        // Send the result back to the main thread
         self.postMessage({
             status: "complete",
             task: "automatic-speech-recognition",
@@ -82,10 +75,9 @@ const transcribe = async (
     subtask,
     language,
 ) => {
-
     const isDistilWhisper = model.startsWith("distil-whisper/");
 
-    // FORCE TINY MODEL for maximum speed and lightweight performance
+    // FORCE TINY MODEL for maximum speed
     let modelName = FORCE_TINY_MODEL ? TINY_MODEL : model;
 
     if (!isDistilWhisper && !multilingual && !FORCE_TINY_MODEL) {
@@ -94,7 +86,6 @@ const transcribe = async (
 
     const p = AutomaticSpeechRecognitionPipelineFactory;
     if (p.model !== modelName || p.quantized !== quantized) {
-        // Invalidate model if different
         p.model = modelName;
         p.quantized = quantized;
 
@@ -123,7 +114,6 @@ const transcribe = async (
         transcriber.processor.feature_extractor.config.chunk_length /
         transcriber.model.config.max_source_positions;
 
-    // Storage for chunks to be processed. Initialise with an empty chunk.
     let chunks_to_process = [
         {
             tokens: [],
@@ -131,17 +121,11 @@ const transcribe = async (
         },
     ];
 
-    // TODO: Storage for fully-processed and merged chunks
-    // let decoded_chunks = [];
-
     function chunk_callback(chunk) {
         let last = chunks_to_process[chunks_to_process.length - 1];
-
-        // Overwrite last chunk with new info
         Object.assign(last, chunk);
         last.finalised = true;
 
-        // Create an empty chunk after, if it not the last chunk
         if (!chunk.is_last) {
             chunks_to_process.push({
                 tokens: [],
@@ -150,15 +134,10 @@ const transcribe = async (
         }
     }
 
-    // Inject custom callback function to handle merging of chunks
     function callback_function(item) {
         let last = chunks_to_process[chunks_to_process.length - 1];
-
-        // Update tokens of last chunk
         last.tokens = [...item[0].output_token_ids];
 
-        // Merge text chunks
-        // TODO optimise so we don't have to decode all chunks every time
         let data = transcriber.tokenizer._decode_asr(chunks_to_process, {
             time_precision: time_precision,
             return_timestamps: true,
@@ -172,27 +151,18 @@ const transcribe = async (
         });
     }
 
-    // Actually run transcription
+    // Run transcription
     let output = await transcriber(audio, {
-        // Greedy
         top_k: 0,
         do_sample: false,
-
-        // Sliding window
         chunk_length_s: isDistilWhisper ? 20 : 30,
         stride_length_s: isDistilWhisper ? 3 : 5,
-
-        // Language and task
         language: language,
         task: subtask,
-
-        // Return timestamps
         return_timestamps: true,
         force_full_sequences: false,
-
-        // Callback functions
-        callback_function: callback_function, // after each generation step
-        chunk_callback: chunk_callback, // after each chunk is processed
+        callback_function: callback_function,
+        chunk_callback: chunk_callback,
     }).catch((error) => {
         self.postMessage({
             status: "error",
